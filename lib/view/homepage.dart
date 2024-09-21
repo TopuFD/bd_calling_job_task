@@ -30,6 +30,7 @@ class HomeScreen extends StatelessWidget {
           myLocationEnabled: true,
           myLocationButtonEnabled: true,
           markers: Set<Marker>.of(gMapController.markers),
+          polylines: Set<Polyline>.of(gMapController.polylines),
           initialCameraPosition: gMapController.cameraPosition,
           onMapCreated: (GoogleMapController controller) {
             gMapController.mapController.complete(controller);

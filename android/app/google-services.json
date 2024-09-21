@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "763707372315",
+    "project_id": "bd-calling-task-ff124",
+    "storage_bucket": "bd-calling-task-ff124.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:763707372315:android:5e7537fea91b9ac45bd9be",
+        "android_client_info": {
+          "package_name": "com.example.ddddd"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAzhZaJWrBEN-aKFBytsRIiFZ5F5rlfp1w"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

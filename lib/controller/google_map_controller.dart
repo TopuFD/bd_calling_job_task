@@ -1,19 +1,23 @@
-import 'package:firebase_database/firebase_database.dart';
+import 'dart:async';
 import 'package:ddddd/controller/device_info_controller.dart';
 import 'package:ddddd/controller/user_current_location.dart';
+import 'package:ddddd/main.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'dart:async';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:firebase_database/firebase_database.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'direction_controller.dart';
 
 class GMapController extends GetxController {
   final UserCurrentLocation currrentLocController =
       Get.find<UserCurrentLocation>();
   final DeviceInfoController deviceInfoController =
       Get.find<DeviceInfoController>();
+  final DirectionController directionController =
+      Get.find<DirectionController>();
 
-  //======================================init camera position
+  // ============initial camera position=====================>
   CameraPosition cameraPosition =
       const CameraPosition(target: LatLng(23.777176, 90.399452), zoom: 14);
 
@@ -22,10 +26,11 @@ class GMapController extends GetxController {
   var polylines = <Polyline>{}.obs;
 
   Timer? locationTimer;
+  Timer? polylineUpdateTimer;
   String? savedUserId;
   DatabaseReference? userRef;
 
-  // ====================================load user id from sharedpreferance
+  // ==================================> load user id=============================>
   Future<void> loadUserId() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     savedUserId = prefs.getString('userId');
@@ -34,25 +39,23 @@ class GMapController extends GetxController {
       await prefs.setString('userId', savedUserId!);
     }
 
-    // ==============================Firebase Realtime Database reference
+    // ==================================> firebase realtime ref =============================>
     userRef = FirebaseDatabase.instance.ref('locations/$savedUserId');
 
-    // ===============================delete user if the user disconnect
+    // ==================================> delete ref if dissconnect =============================>
     userRef!.onDisconnect().remove();
   }
 
-  // ================================current every 5 seconds and update in Firebase
+  // ==================================> corrent location every 5m =============================>
   getCurrentLocation() async {
     GoogleMapController controller = await mapController.future;
     controller.animateCamera(CameraUpdate.newCameraPosition(cameraPosition));
-    locationTimer = Timer.periodic(Duration(seconds: 5), (timer) {
+    locationTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
       currrentLocController.getCurrentLocation().then((value) async {
-        print("User location: ${value.latitude}, ${value.longitude}");
-
-        //================================= calling updateUserLocation method
+        //==============================> calling updateUserLocation method================>
         updateUserLocation(savedUserId!, value.latitude, value.longitude);
 
-        // ================================update camera position
+        //==================================> update cemera position===============>
         cameraPosition = CameraPosition(
           target: LatLng(value.latitude, value.longitude),
           zoom: 14,
@@ -61,7 +64,7 @@ class GMapController extends GetxController {
     });
   }
 
-  // ===========================================Update or create database
+  // ==================================>updateUserLocation method=============================>
   void updateUserLocation(String userId, double latitude, double longitude) {
     userRef!.set({
       'latitude': latitude,
@@ -70,10 +73,43 @@ class GMapController extends GetxController {
     });
   }
 
-  // ========================================================get user data
+  // ==================================>update polyline every 5m=============================>
+  void startPolylineUpdate() {
+    polylineUpdateTimer = Timer.periodic(Duration(seconds: 5), (timer) {
+      currrentLocController.getCurrentLocation().then((currentLocation) {
+        DatabaseReference allUsersRef =
+            FirebaseDatabase.instance.ref('locations');
+        allUsersRef.once().then((event) {
+          if (event.snapshot.exists) {
+            Map<dynamic, dynamic> allUsersData =
+                event.snapshot.value as Map<dynamic, dynamic>;
+            LatLng currentUserPosition =
+                LatLng(currentLocation.latitude, currentLocation.longitude);
+            allUsersData.forEach((otherUserId, otherUserData) async {
+              if (otherUserId != savedUserId) {
+                LatLng otherUserPosition = LatLng(
+                    otherUserData['latitude'], otherUserData['longitude']);
+
+                //========================fetchDirections method calling====================>
+                List<LatLng> routePoints = await directionController
+                    .fetchDirections(currentUserPosition, otherUserPosition);
+
+                // =================update polyline===============>
+                if (routePoints.isNotEmpty) {
+                  polylines.clear();
+                  updateRoutePolyline(routePoints);
+                }
+              }
+            });
+          }
+        });
+      });
+    });
+  }
+
+  // ============================>get user data form realtime database===========>
   void getUserDataRealTime() {
     DatabaseReference allUsersRef = FirebaseDatabase.instance.ref('locations');
-
     allUsersRef.onValue.listen((DatabaseEvent event) {
       if (event.snapshot.exists) {
         Map<dynamic, dynamic> allUsersData =
@@ -82,19 +118,16 @@ class GMapController extends GetxController {
           LatLng position = LatLng(userData['latitude'], userData['longitude']);
           bool isCurrentUser = (userId == savedUserId);
 
-          // ==========================================calling updateMarkers method
+          // ==============calling updateMarkers method===========>
           updateMarkers(userId, position, isCurrentUser);
 
-          // =================================================update polylines
-          if (isCurrentUser) {
-            LatLng currentUserPosition = position;
+          if (!isCurrentUser) {
+            LatLng otherUserPosition = position;
 
-            allUsersData.forEach((otherUserId, otherUserData) {
-              if (otherUserId != savedUserId) {
-                LatLng otherUserPosition = LatLng(
-                    otherUserData['latitude'], otherUserData['longitude']);
-                updatePolylines(currentUserPosition, otherUserPosition);
-              }
+            currrentLocController.getCurrentLocation().then((currentLocation) {
+              LatLng currentUserPosition =
+                  LatLng(currentLocation.latitude, currentLocation.longitude);
+              addPolylineForRoute(currentUserPosition, otherUserPosition);
             });
           }
         });
@@ -104,7 +137,7 @@ class GMapController extends GetxController {
     });
   }
 
-  // ========================================== updateMarkers method here
+  // ==================================> updateMarkers here=============================>
   void updateMarkers(String userId, LatLng position, bool isCurrentUser) {
     int existingMarkerIndex =
         markers.indexWhere((marker) => marker.markerId.value == userId);
@@ -116,11 +149,9 @@ class GMapController extends GetxController {
         infoWindow:
             InfoWindow(title: isCurrentUser ? "Your Location" : "User $userId"),
         icon: isCurrentUser
-            ? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue)
-            : BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+            ? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed)
+            : BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
       );
-
-      print("Updated marker for $userId: ${markers[existingMarkerIndex]}");
     } else {
       Marker newMarker = Marker(
         markerId: MarkerId(userId),
@@ -128,46 +159,68 @@ class GMapController extends GetxController {
         infoWindow:
             InfoWindow(title: isCurrentUser ? "Your Location" : "User $userId"),
         icon: isCurrentUser
-            ? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue)
-            : BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+            ? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed)
+            : BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
       );
-
       markers.add(newMarker);
-      print("Added new marker for $userId: $newMarker");
     }
-
-    print("Current markers: $markers");
   }
 
-  //=============================================poly line method
+  // ===============================addPolylineForRoute method here=================>
+  Future<void> addPolylineForRoute(LatLng start, LatLng end) async {
+    List<LatLng> routePoints =
+        await directionController.fetchDirections(start, end);
+    if (routePoints.isNotEmpty) {
+      updateRoutePolyline(routePoints);
+    }
+  }
 
-  void updatePolylines(LatLng start, LatLng end) {
+  // ===========================update updateRoutePolyline method =============>
+  void updateRoutePolyline(List<LatLng> routePoints) {
     String polylineId =
-        "polyline_${start.latitude}_${start.longitude}_${end.latitude}_${end.longitude}";
-
+        "polyline_${routePoints.first.latitude}_${routePoints.first.longitude}_${routePoints.last.latitude}_${routePoints.last.longitude}";
     polylines.add(Polyline(
       polylineId: PolylineId(polylineId),
-      points: [start, end],
+      points: routePoints,
       color: const Color(0xFF021FF9),
-      width: 5,
+      width: 7,
     ));
-
-    print("Current polylines: $polylines");
   }
 
-  // ====================================clean timer
+  // =====================================add polyline for other user================>
+  void addPolylineForOtherUsers(double lat, double lng) {
+    DatabaseReference allUsersRef = FirebaseDatabase.instance.ref('locations');
+    allUsersRef.once().then((event) {
+      if (event.snapshot.exists) {
+        Map<dynamic, dynamic> allUsersData =
+            event.snapshot.value as Map<dynamic, dynamic>;
+        LatLng currentUserPosition = LatLng(lat, lng);
+        allUsersData.forEach((otherUserId, otherUserData) {
+          if (otherUserId != savedUserId) {
+            LatLng otherUserPosition =
+                LatLng(otherUserData['latitude'], otherUserData['longitude']);
+            addPolylineForRoute(currentUserPosition, otherUserPosition);
+          }
+        });
+      }
+    });
+  }
+
+  // ================onClose method here===========>
   @override
   void onClose() async {
     locationTimer?.cancel();
+    polylineUpdateTimer?.cancel();
     super.onClose();
   }
 
-  // ================================== oninit mehtod
+  // =====================onInit method here===============>
   @override
   void onInit() async {
     await loadUserId();
     getCurrentLocation();
     getUserDataRealTime();
+    startPolylineUpdate();
     super.onInit();
   }
 }

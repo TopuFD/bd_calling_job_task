@@ -1,4 +1,5 @@
 import 'package:ddddd/controller/google_map_controller.dart';
+import 'package:ddddd/controller/direction_controller.dart';
 import 'package:ddddd/controller/user_current_location.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -9,8 +10,8 @@ class HomeScreen extends StatelessWidget {
   HomeScreen({super.key});
 
   final GMapController gMapController = Get.find<GMapController>();
-  final UserCurrentLocation currrentLocController =
-      Get.find<UserCurrentLocation>();
+  final UserCurrentLocation currrentLocController = Get.find<UserCurrentLocation>();
+  final DirectionController directionController = Get.find<DirectionController>();
 
   @override
   Widget build(BuildContext context) {
@@ -24,34 +25,49 @@ class HomeScreen extends StatelessWidget {
               fontSize: 20.sp, color: Colors.blue, fontWeight: FontWeight.bold),
         ),
       ),
-      body: Obx(
-        () => GoogleMap(
-          zoomControlsEnabled: false,
-          myLocationEnabled: true,
-          myLocationButtonEnabled: true,
-          markers: Set<Marker>.of(gMapController.markers),
-          polylines: Set<Polyline>.of(gMapController.polylines),
-          initialCameraPosition: gMapController.cameraPosition,
-          onMapCreated: (GoogleMapController controller) {
-            gMapController.mapController.complete(controller);
-          },
-        ),
-      ),
-      floatingActionButton: InkWell(
-        onTap: () async {
-          gMapController.getCurrentLocation();
-        },
-        child: Container(
-          height: 60.h,
-          width: 60.w,
-          decoration:
-              const BoxDecoration(color: Colors.blue, shape: BoxShape.circle),
-          child: const Center(
-              child: Icon(
-            Icons.location_searching,
-            color: Colors.white,
-          )),
-        ),
+      body: Column(
+        children: [
+          Expanded(
+            child: Obx(
+              () => GoogleMap(
+                zoomControlsEnabled: false,
+                myLocationEnabled: true,
+                myLocationButtonEnabled: true,
+                markers: Set<Marker>.of(gMapController.markers),
+                polylines: Set<Polyline>.of(gMapController.polylines),
+                initialCameraPosition: gMapController.cameraPosition,
+                onMapCreated: (GoogleMapController controller) {
+                  gMapController.mapController.complete(controller);
+                },
+              ),
+            ),
+          ),
+          Obx(
+            () => Container(
+              padding: EdgeInsets.all(16.h),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Distance: ${directionController.distanceText.value}',
+                    style: TextStyle(
+                      fontSize: 16.sp,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  SizedBox(height: 8.h),
+                  Text(
+                    'Duration: ${directionController.durationText.value}',
+                    style: TextStyle(
+                      fontSize: 16.sp,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
